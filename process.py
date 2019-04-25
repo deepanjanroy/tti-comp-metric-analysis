@@ -169,10 +169,12 @@ def check_output_columns_exist(row, output_columns):
     if col not in input_columns:
       raise Exception("Output column {0} does not exist in input".format(col))
 
-def only_keep_single_navigation(row):
+def has_single_navigation(row):
+  return float(row['# of navigations']) == 1.0
 
 
 def filter_output_rows(rows):
+  return filter(has_single_navigation, rows);
 
 """
 Usage:
@@ -181,15 +183,17 @@ $SCRIPT_NAME <input> <output>
 def main():
   output_columns = genOutputColumns()
   rows = read_input(sys.argv[1])
+  input_length = len(rows);
   rename_columns(rows)
   copy_columns(rows)
   prune_columns(rows, output_columns)
   clean_page_name(rows)
   check_output_columns_exist(rows[0], output_columns)
-  filter_output_rows(rows);
+  rows = filter_output_rows(rows);
   write_output(rows, sys.argv[2], output_columns)
   print "{0} total columns written.".format(len(output_columns))
   print "{0} total rows written.".format(len(rows))
+  print "{0} total rows discarded.".format(input_length - len(rows))
 
 if __name__ == '__main__':
   main()
