@@ -1,5 +1,6 @@
 import csv
 import sys
+from collections import defaultdict
 from pprint import pprint
 
 # If a column name has his suffix, this suffix will be deleted.
@@ -172,9 +173,47 @@ def check_output_columns_exist(row, output_columns):
 def has_single_navigation(row):
   return float(row['# of navigations']) == 1.0
 
-
 def filter_output_rows(rows):
   return filter(has_single_navigation, rows);
+
+def summary_first(vals):
+  return vals[0]
+
+# [1, 2, 3, 4] => (vals[1] + vals[2]) / 2
+# [1, 2, 3] => (vals[1])
+def summary_median(vals):
+  # Return the first value if you values are not actually float
+  try:
+    vals = [float(v) for v in vals]
+  except ValueError:
+    return vals[0]
+
+  sorted_vals = sorted(vals)
+  if (len(vals) % 2 != 0):
+    return sorted_vals[len(vals) / 2]
+  else:
+    return (sorted_vals[(len(vals) / 2) - 1] + sorted_vals[len(vals) / 2]) / 2
+
+DEFAULT_SUMMARY_FUNCS = {"*": summary_first}
+
+def summarize(rows, summary_functions=DEFAULT_SUMMARY_FUNCS):
+  groups = defaultdict(list)
+  for row in rows:
+    groups[row["page_name"]].append(row)
+
+  out = []
+  for key, values in groups.iteritems():
+    if len(values) == 0:
+      continue
+    col_names = values[0].keys()
+    summarized_row = {}
+    for col_name in col_names:
+      summary_func = summary_functions.get(
+        col_name, summary_functions.get('*', summary_first))
+      col_values = [v[col_name] for v in values]
+      summarized_row[col_name] = summary_func(col_values)
+    out.append(summarized_row)
+  return out
 
 """
 Usage:
@@ -190,6 +229,10 @@ def main():
   clean_page_name(rows)
   check_output_columns_exist(rows[0], output_columns)
   rows = filter_output_rows(rows);
+  rows = summarize(rows, {
+    'page_name': summary_first,
+    'traceUrls': summary_first,
+    '*': summary_median})
   write_output(rows, sys.argv[2], output_columns)
   print "{0} total columns written.".format(len(output_columns))
   print "{0} total rows written.".format(len(rows))
