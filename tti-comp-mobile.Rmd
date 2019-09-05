@@ -1,0 +1,344 @@
+---
+title: "Exploring TTI Comapnion Metric Data"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(plotly)
+setwd('/home/dproy/code/tti-companion-metric/')
+
+# Avoid using scientific notation in axis ticks, by setting a high penalty.
+# What a strange language.
+options(scipen=10000)  
+
+df <- read_csv("out/desktop-10k.csv") %>%
+  # Drop row where we had more than one navigation.
+  # Hard to calculate navigation metrics. 
+  filter(`# of navigations` == 1)
+```
+Total number of rows:
+```{r}
+df %>% tally()
+```
+
+How mamy have TTI above 60s? (We can filter these out later as outliers to make graphs look better) (Q. Do we really need this since we switched to the log scale?)
+```{r}
+df %>% filter(TTI > 60 * 1000) %>% tally()
+```
+
+
+How many values differ between TTI and TTI + 10s? (both FCP and navStart as start point should yield same result)
+```{r}
+diffvalueframe <- df %>%
+  filter(`SumOfQueuingTimeGT50_p1.0-FCP-Interactive` != `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`) %>%
+  mutate(diff = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive` - `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`) %>%
+  select(diff)
+
+diffvalueframe %>% tally()
+```
+
+Percentage of total data:
+```{r}
+count(diffvalueframe) / count(df) * 100
+```
+
+
+
+
+```{r}
+diffvalueframe %>% summarise(mean(diff), median(diff), 
+                             # This is 90th and 99th percentile since diff is negative.
+                             quantile(diff, .1), quantile(diff, 0.01))
+```
+
+```{r}
+diffvalueframe %>%
+  ggplot(aes(x = -diff)) +
+  geom_histogram() + 
+  scale_x_log10()
+
+```
+```{r, include=FALSE}
+rm(diffvalueframe)
+```
+
+
+How many values differ between TTI and TTI + 10s? (both FCP and navStart as start point should yield same result)
+```{r}
+diffvalueframe <- df %>%
+  filter(`SumOfQueuingTimeGT50_p1.0-navStart-Interactive` != `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`) %>%
+  mutate(diff = `SumOfQueuingTimeGT50_p1.0-navStart-Interactive` - `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`) %>%
+  select(diff)
+
+diffvalueframe %>% tally()
+```
+
+Percentage of total data:
+```{r}
+count(diffvalueframe) / count(df) * 100
+```
+
+
+
+
+```{r}
+diffvalueframe %>% summarise(mean(diff), median(diff), 
+                             quantile(diff, .9), quantile(diff, 0.99))
+```
+
+```{r}
+diffvalueframe %>%
+  ggplot(aes(x = diff)) +
+  geom_histogram() + 
+  scale_x_log10()
+```
+```{r, include=FALSE}
+rm(diffvalueframe)
+```
+
+
+## Questions
+TODO: Find better questions to ask about data.
+
+What is the distribution of SQT50?
+
+First lets find the extreme values.
+```{r}
+df %>%
+  filter(`SumOfQueuingTimeGT50_p1.0-FCP-Interactive` > 10000) %>%
+  count()
+```
+
+Distribution Sum of Queuing time values. First we include zero values in the visualization. Since we're using a log scale, we just add 1 to everything to avoid the log scale infinity issue. 
+
+```{r}
+p <- df %>%
+  mutate(`tbt` = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive` + 1) %>%
+  ggplot() + 
+  geom_histogram(aes(x = tbt),
+                 bins = 50) + 
+  scale_x_log10() +
+  labs(x = "Sum of Queuing Time > 50ms between FCP and TTI")
+
+ggplotly(p) %>%
+  # Plot x tooltip is broken in log scale, so hide it. Read the axis labels pls.
+  style(hoverinfo = "y")
+```
+
+Excluding the zero values, we have this:
+```{r}
+p <- df %>%
+  mutate(tbt = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`) %>%
+  filter(tbt > 0) %>% 
+  ggplot() + 
+  geom_histogram(aes(x = tbt),
+                 bins = 50) + 
+  geom_vline(xintercept = mean(df$`SumOfQueuingTimeGT50_p1.0-FCP-Interactive`)) +
+  scale_x_log10()
+
+ggplotly(p) %>%
+  # Plot x tooltip is broken in log scale, so hide it. Read the axis labels pls.
+  style(hoverinfo = "y")
+```
+
+```{r}
+df %>% 
+  mutate(tbt = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`) %>%
+  summarize(mean(tbt), quantile(tbt, 0.1), quantile(tbt, 0.5), quantile(tbt, 0.9), quantile(tbt, 0.99))
+```
+Exlucding zero values:
+```{r}
+df %>% 
+  mutate(tbt = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`) %>%
+  filter(tbt > 0) %>%
+  summarize(mean(tbt), quantile(tbt, 0.1), quantile(tbt, 0.5), quantile(tbt, 0.9), quantile(tbt, 0.99))
+```
+
+And what is the TTI distribution?
+```{r}
+p <- df %>%
+  ggplot() + 
+  geom_histogram(aes(x = TTI),
+                 bins = 50) + 
+  scale_x_log10()
+
+ggplotly(p) %>%
+  # Plot x tooltip is broken in log scale, so hide it. Read the axis labels.
+  style(hoverinfo = "y")
+```
+
+What happens in the extreme high range of TTI distribution? 
+```{r}
+df %>% 
+  filter(TTI > 50000) %>%
+  select(page_name, TTI, `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`, `SumOfLongTasks-navStart-TtiPlus10s`)
+
+```
+
+
+What about extreme high range of SQT50? 
+```{r}
+df %>% 
+  filter(`SumOfQueuingTimeGT50_p1.0-navStart-TtiPlus10s` > 10000) %>%
+  select(page_name, TTI, `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`, `SumOfLongTasks-navStart-TtiPlus10s`)
+
+```
+
+
+
+TODO: Show difference between starting at FCP vs starting at nav start.
+
+
+
+Things I expect to be true: 
+- Sum of QT > 50ms correlates pretty well with all the other sum of metrics. 
+
+```{r}
+p <- df %>%
+  ggplot(aes(x=df$`SumOfQueuingTimeGT50_p1.0-navStart-TtiPlus10s`,
+             y=df$`SumOfLongTasks-navStart-TtiPlus10s`)) + 
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, )
+p
+```
+
+
+- The metric should not have super strong correlation with TTI (otherwise we don't need an extra metric, TTI is enough.)
+```{r tti}
+p <- df %>% 
+  filter(TTI < 80 * 1000) %>%
+  ggplot(aes(x = `TTI`, y = `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`, text = page_name)) +
+  geom_point()
+ggplotly(p)
+```
+Definitely don't see a simple correlation with TTI - the metric looks independent enough. 
+
+TODO: Find cases where
+- TTI both high, comp metric high and low.
+  - http://momomall.com.tw (full of syncronous xhrs) vs gucci.com
+  - 
+- TTI high but comp metric low
+- TTI low but comp metric high
+- TTI both low, comp metric low and high.
+
+
+What is the distribution of data at various ranges of TTI? 
+```{r}
+p <- df %>%
+  mutate(tti_bucket = cut(TTI,
+                          breaks=c(seq(0, 60000, 10000), Inf),
+                          labels=c(paste0(c(0, 10, 20, 30, 40, 50), "s"), "Overflow"))) %>%
+  ggplot(aes(x = factor(tti_bucket),
+             y = `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`)) +
+  geom_violin() + 
+  scale_y_log10()
+ggplotly(p)
+
+```
+*Observation*: Metric generally increased with higher TTI upto about 30s, then drops off. 
+
+```{r}
+p <- df %>%
+  mutate(tti_bucket = cut(TTI,
+                          breaks=c(seq(0, 60000, 10000), Inf),
+                          labels=c(paste0(c(0, 10, 20, 30, 40, 50), "s"), "Overflow"))) %>%
+  ggplot(aes(x = `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`)) +
+  geom_density() +
+  scale_x_log10() +
+  facet_wrap(~tti_bucket)
+
+ggplotly(p)
+
+```
+
+
+Same view, but with average and mean: 
+```{r}
+cols <- c("Mean"="blue","Median"="red")
+
+p <- df %>%
+  mutate(tti_bucket = cut(TTI,
+                          breaks=c(seq(0, 60000, 10000), Inf),
+                          labels=c(paste0(seq(0, 60, 10), 
+                                          "-", 
+                                          c(seq(10, 60, 10), "inf"), 
+                                          "s")))) %>%
+  filter(TTI < 80 * 1000) %>%
+  ggplot(aes(x = factor(tti_bucket),
+             y = `SumOfQueuingTimeGT50_p1.0-FCP-TtiPlus10s`)) +
+  stat_summary(aes(color = "Mean")) +
+  stat_summary(aes(color = "Median"), geom = "point", fun.y = "median", size = 2) +
+  scale_colour_manual(name="",values=cols, labels=c("Mean and one std dev", "Median")) + 
+  theme(axis.title.x = element_text(size = 15, vjust=-.2)) +
+  theme(axis.title.y = element_text(size = 15, vjust=0.3))
+  
+
+  
+ggplotly(p)
+  # p
+
+
+```
+
+TODO: Find cases where
+- TTI both high, comp metric high and low.
+- TTI high but comp metric low
+- TTI low but comp metric high
+- TTI both low, comp metric low and high.
+
+TODO: Do the same analysis for mobile data.
+
+```{r}
+
+```
+
+
+What about PFID > n ms. Is it also not totally correlated? 
+```{r}
+p <- df %>% 
+  filter(TTI < 80 * 1000) %>%
+  ggplot(aes(x = `TTI`, y = `ProbFidMoreThan-50`, text = page_name)) +
+  geom_point()
+ggplotly(p)
+```
+Yup looks like it's kind of all over the place.
+
+How does this and EFID compare?
+```{r}
+p <- df %>% 
+  filter(ExpectedFID < 1000) %>%
+  ggplot(aes(x = `ExpectedFID`, y = `ProbFidMoreThan-50`, text = page_name)) +
+  geom_point()
+ggplotly(p)
+```
+*Observation*: P(FID > n ms) goes up as EFID increases, which makes sense. Obiously relationship is not linear.
+
+
+Check the correlation between navStart-Interactive vs other time points: (TODO)
+```{r}
+p <- df %>%
+  ggplot(aes(x = `SumOfQueuingTimeGT50_p1.0-FCP-Interactive`,
+             y = `SumOfLongTasks-FCP-TtiPlus10s`))  +
+  geom_point()
+p
+```
+
+```{r}
+p <- df %>%
+  ggplot(aes(x = `SumOfQueuingTimeGT50_p1.0-navStart-Interactive`,
+             y = `SumOfLongTasks-FCP-TtiPlus10s`))  +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, )
+p
+```
+
+```{r}
+p <- df %>%
+  ggplot(aes(x = `SumOfQueuingTimeGT50_p1.0-navStart-Interactive`,
+             y = `SumOfLongTasks-navStart-TtiPlus10s`))  +
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1, )
+p
+```
